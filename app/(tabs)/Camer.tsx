@@ -1,68 +1,74 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
-
-import {
-  Face,
-  
-  FaceDetectionOptions
-} from 'react-native-vision-camera-face-detector'
+import { useFaceDetector, FaceDetectionOptions } from 'react-native-vision-camera-face-detector';
+import { useSharedValue, useAnimatedReaction, withSpring } from 'react-native-reanimated';
 
 export default function App() {
   const device = useCameraDevice('front');
-  const { hasPermission, requestPermission } = useCameraPermission();
+  const [hasPermission, setHasPermission] = useState(false);
 
-  const frameCountRef = useRef(0); // Track frame count using ref
-  const [frameCount, setFrameCount] = useState(0); // To display frame count in UI
+  // Initialize face detector
+  const facedetector = useFaceDetector();
 
+  // Shared value to store faces data
+  const facesShared = useSharedValue([]);
 
-
-  const faceDetectionOptions = useRef<FaceDetectionOptions>( {
-    // detection options
-  } ).current
-
-
-
-  function handleFacesDetection(
-    faces,
-    frame
-  ) { 
-    console.log(
-      'faces', faces.length,
-      'frame', frame.toString()
-    )
-  }
-
-
+  // Handle permissions
   useEffect(() => {
-    if (!hasPermission) {
-      requestPermission();
-    }
-  }, [hasPermission]);
+    const getPermissions = async () => {
+      const permission = await Camera.requestCameraPermission();
+      setHasPermission(permission);
+    };
+    getPermissions();
+  }, []);
 
-  // Frame processor function, decorated with 'worklet' for optimization
+  const faceDetectionOptions: FaceDetectionOptions = {
+    autoScale: true,
+    classificationMode: 'all',
+    contourMode: 'all',
+    landmarkMode: 'all',
+    minFaceSize: 0.2,
+    performanceMode: 'accurate',
+    trackingEnabled: true,
+    windowHeight: 1280,
+    windowWidth: 720,
+  };
+
+  // Frame processor
   const frameProcessor = useFrameProcessor((frame) => {
-    'worklet'; // Mark this function as a worklet
+    'worklet';
+    try {
+      const throttleRate = 10;
+      if (frame.timestamp % throttleRate === 0) {
+        const detectedFaces = facedetector.detectFaces(frame);
+        const plainFaces = detectedFaces.map((face) => ({
+          bounds: face.bounds,
+          pitchAngle: face.pitchAngle,
+          rollAngle: face.rollAngle,
+          yawAngle: face.yawAngle,
+        }));
 
-    // console.log(frame.toString());
-    
+        // Update shared value
+        facesShared.value = plainFaces;
 
-    // Update frame count using ref
-    frameCountRef.current += 1;
-
-    // Optionally log the frame count
-    if (frameCountRef.current % 30 === 0) {
-      console.log('Processing frame...', frameCountRef.current);
+        console.log(facesShared.value, "facesshared.value");
+        
+      }
+    } catch (error) {
+      console.error(error , "error");
     }
+  }, [faceDetectionOptions]);
 
-  }, []); // Empty dependency array ensures it doesn't re-run unnecessarily
-
-  // Update state for every 30th frame in the regular JavaScript thread
-  useEffect(() => {
-    if (frameCountRef.current % 30 === 0) {
-      setFrameCount(frameCountRef.current); // Update React state outside of the worklet
-    }
-  }, [frameCountRef.current]); // Trigger this effect when the ref changes
+  // Use `useAnimatedReaction` to react to the shared value updates on JS thread
+  useAnimatedReaction(
+    () => facesShared.value,
+    (faces) => {
+      // Handle faces updates on the JS thread here
+      console.log(faces, "faces"); // You can process the faces here
+    },
+    [facesShared]
+  );
 
   if (!hasPermission) {
     return (
@@ -72,7 +78,7 @@ export default function App() {
     );
   }
 
-  if (device == null) {
+  if (!device) {
     return (
       <View style={styles.centered}>
         <Text>No Camera Device Found</Text>
@@ -86,12 +92,15 @@ export default function App() {
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={true}
-        frameProcessor={frameProcessor} // Attach the frame processor to the camera
-        faceDetectionCallback={ handleFacesDetection }
-        faceDetectionOptions={ faceDetectionOptions }
+        frameProcessor={frameProcessor}
       />
       <View style={styles.overlay}>
-        <Text style={styles.frameCountText}>Frame Count: {frameCount}</Text>
+        <Text style={styles.text}>Detected Faces: {facesShared.value.length}</Text>
+        {facesShared.value.map((face, index) => (
+          <Text key={index} style={styles.text}>
+            Face {index + 1}: Bounds({JSON.stringify(face.bounds)})
+          </Text>
+        ))}
       </View>
     </View>
   );
@@ -100,24 +109,24 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'black',
   },
   overlay: {
     position: 'absolute',
     top: 50,
     left: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     padding: 10,
     borderRadius: 5,
   },
-  frameCountText: {
+  text: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 16,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'black',
   },
 });
