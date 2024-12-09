@@ -56,6 +56,8 @@ export default function App() {
         }));
 
         facesShared.value = plainFaces;
+        // console.log(plainFaces);
+        
 
         // Trigger React state update using runOnJS
         runOnJSUpdateFaces(plainFaces);
@@ -72,30 +74,34 @@ export default function App() {
 
   const renderSkia = detectedFaces.map((face, index) => {
     const { x, y, width, height } = face?.bounds || {};
+
+    
     if (!x || !y || !width || !height) return null;
-
-    // Calculate position and size to fit canvas
-    const scaleX = 1; // scale the X axis according to your camera resolution and canvas size
-    const scaleY = 1; // scale the Y axis accordingly
-    const rectX = x * scaleX;
-    const rectY = y * scaleY;
-    const rectWidth = width * scaleX;
-    const rectHeight = height * scaleY;
-
+  
+    // Adjust the bounding box to better cover the face by expanding it
+    const padding = 0.2; // Increase padding to make sure the face is fully covered
+    const adjustedWidth = width * (1.2 + padding);
+    const adjustedHeight = height * (1.2 + padding);
+  
+    // Adjust the position to ensure the bounding box remains centered on the face
+    const adjustedX = x - (adjustedWidth - width+10) ;
+    const adjustedY = y - (adjustedHeight - height+20);
+  
     return (
       <Group style="stroke" strokeWidth={10} key={index}>
         <Rect
-          x={rectX}
-          y={rectY}
-          width={rectWidth}
-          height={rectHeight}
+          x={adjustedX}
+          y={adjustedY}
+          width={adjustedWidth}
+          height={adjustedHeight}
           color="red"
+          strokeWidth={5}
           antiAlias={true}
         />
       </Group>
     );
   });
-
+  
   if (!hasPermission) {
     return (
       <View style={styles.centered}>
