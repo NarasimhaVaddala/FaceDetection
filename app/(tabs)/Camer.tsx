@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
-import { useFaceDetector, FaceDetectionOptions } from 'react-native-vision-camera-face-detector';
-import { useSharedValue } from 'react-native-reanimated';
+import { Camera, useCameraDevice, useFrameProcessor } from 'react-native-vision-camera';
+import { useFaceDetector } from 'react-native-vision-camera-face-detector';
 import { Canvas, Rect, Paint, Skia } from '@shopify/react-native-skia';
+import { useSharedValue, Worklets } from 'react-native-worklets-core';
 
 export default function App() {
   const device = useCameraDevice('front');
@@ -13,39 +13,42 @@ export default function App() {
   // Initialize face detector
   const facedetector = useFaceDetector();
 
-  // Shared value to store faces data
+  // Shared value to store faces data (from worklets package)
   const facesShared = useSharedValue([]);
 
   // Handle permissions
   useEffect(() => {
     const getPermissions = async () => {
       const permission = await Camera.requestCameraPermission();
-      setHasPermission(permission);
+      setHasPermission(permission === 'granted');
     };
     getPermissions();
   }, []);
 
-  const faceDetectionOptions: FaceDetectionOptions = {
-    autoScale: true,
-    classificationMode: 'all',
-    contourMode: 'all',
-    landmarkMode: 'all',
-    minFaceSize: 0.2,
-    performanceMode: 'accurate',
-    trackingEnabled: true,
-    windowHeight: 1280,
-    windowWidth: 720,
-  };
+  // createRunOnJS to trigger React state updates from worklets
+  const runOnJSUpdateFaces = Worklets.createRunOnJS((faces) => {
+    // console.log(faces);
+    
+    setDetectedFaces(faces); // Update React state when new faces are detected
+  });
 
-  // Frame processor
+
+  // Frame processor to process camera frames and detect faces
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet';
-    try {
-      const throttleRate = 10;
-      if (frame.timestamp % throttleRate === 0) {
-        const detectedFaces = facedetector.detectFaces(frame);
 
-        if (detectedFaces.length > 0) {
+
+      try {
+
+        const throttleRate = 10;
+
+        if (frame.timestamp % throttleRate === 0) {
+
+          
+          const detectedFaces = facedetector.detectFaces(frame);
+
+          if (detectedFaces.length) {
+                 // Map detected faces to a plain array of bounds and angles
           const plainFaces = detectedFaces.map((face) => ({
             bounds: face.bounds,
             pitchAngle: face.pitchAngle,
@@ -53,22 +56,55 @@ export default function App() {
             yawAngle: face.yawAngle,
           }));
 
-          // Update shared value
+
           facesShared.value = plainFaces;
+  
+          // Trigger React state update using runOnJS
+          runOnJSUpdateFaces(facesShared.value);
+  
+         
+         
+          }
 
-          console.log(plainFaces);
-          
+     
+
         }
-      }
-    } catch (error) {
-      console.error(error, 'error');
-    }
-  }, [faceDetectionOptions]);
 
-  // Use useEffect to debug detected faces
-  useEffect(() => {
-    console.log('Detected Faces:', detectedFaces);
-  }, [detectedFaces]);
+       
+      } catch (error) {
+        console.error('Error in frame processor:', error);
+      }
+    }
+  , []);
+
+
+  useEffect(()=>{
+      // console.log(detectedFaces , "in useeffect");
+      
+  },[detectedFaces])
+
+
+
+
+  const renderSkia =  Object.values(detectedFaces).map((face, index) => {
+
+
+    console.log(detectedFaces , "in skia");
+    
+  
+    // Create a Skia rect using the face bounds
+    // const rect = Skia.XYWHRect(face.bounds.x, origin.y, size.width, size.height);
+  
+    // // Prepare the paint style
+    // const paint = Skia.Paint();
+    // paint.setStyle('stroke'); // Ensure we use stroke
+    // paint.setStrokeWidth(3); // Line width
+    // paint.setColor(Skia.Color('red')); // Red color for bounding box
+  
+    // return <Rect key={index} rect={rect} paint={paint} />;
+  });
+  
+  
 
   if (!hasPermission) {
     return (
@@ -86,22 +122,6 @@ export default function App() {
     );
   }
 
-  // Render Skia lines on the camera preview
-  const renderSkia = facesShared.value.map((face, index) => {
-    const { x, y, width, height } = face.bounds;
-
-    // Create a rect for the bounding box (around the face)
-    const rect = Skia.XYWHRect(x, y, width, height);
-
-    // Correctly initialize the Paint object
-    const paint = new Paint();
-    paint.setStyle('stroke');  // Stroke style for bounding box
-    paint.setStrokeWidth(3);   // Line width
-    paint.setColor(Skia.Color('red')); // Color of the bounding box
-
-    return <Rect key={index} rect={rect} paint={paint} />;
-  });
-
   return (
     <View style={styles.container}>
       <Camera
@@ -114,12 +134,7 @@ export default function App() {
         {renderSkia}
       </Canvas>
       <View style={styles.overlay}>
-        <Text style={styles.text}>Detected Faces: {facesShared.value.length}</Text>
-        {facesShared.value.map((face, index) => (
-          <Text key={index} style={styles.text}>
-            Face {index + 1}: Bounds({JSON.stringify(face.bounds)})
-          </Text>
-        ))}
+        <Text style={styles.text}>Detected Faces: {detectedFaces.length}</Text>
       </View>
     </View>
   );
