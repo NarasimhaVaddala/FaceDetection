@@ -6,9 +6,13 @@ import {
   useFrameProcessor,
 } from "react-native-vision-camera";
 import { useFaceDetector } from "react-native-vision-camera-face-detector";
-import { Canvas, Rect, Paint, Skia, Group } from "@shopify/react-native-skia";
+import {
+  Canvas,
+  Rect,
+  Skia,
+  Group,
+} from "@shopify/react-native-skia";
 import { useSharedValue, Worklets } from "react-native-worklets-core";
-import { Circle } from "react-native-svg";
 
 export default function App() {
   const device = useCameraDevice("front");
@@ -40,32 +44,29 @@ export default function App() {
     "worklet";
 
     try {
-      // const throttleRate = 10;
+      const detectedFaces = facedetector.detectFaces(frame);
 
-      // if (frame.timestamp % throttleRate === 0) {
-        const detectedFaces = facedetector.detectFaces(frame);
+      if (detectedFaces.length) {
+        // Map detected faces to a plain array of bounds and angles
+        const plainFaces = detectedFaces.map((face) => ({
+          bounds: face.bounds,
+          pitchAngle: face.pitchAngle,
+          rollAngle: face.rollAngle,
+          yawAngle: face.yawAngle,
+        }));
 
-        if (detectedFaces.length) {
-          // Map detected faces to a plain array of bounds and angles
-          const plainFaces = detectedFaces.map((face) => ({
-            bounds: face.bounds,
-            pitchAngle: face.pitchAngle,
-            rollAngle: face.rollAngle,
-            yawAngle: face.yawAngle,
-          }));
+        facesShared.value = plainFaces;
 
-          facesShared.value = plainFaces;
-
-          // Trigger React state update using runOnJS
-          runOnJSUpdateFaces(plainFaces);
-        }
-      // }
+        // Trigger React state update using runOnJS
+        runOnJSUpdateFaces(plainFaces);
+      }
     } catch (error) {
       console.error("Error in frame processor:", error);
     }
   }, []);
 
   useEffect(() => {
+    // Optionally log detected faces
     // console.log(detectedFaces , "in useeffect");
   }, [detectedFaces]);
 
@@ -73,21 +74,27 @@ export default function App() {
     const { x, y, width, height } = face?.bounds || {};
     if (!x || !y || !width || !height) return null;
 
-    const rect = Skia.XYWHRect(x, y, width, height);
+    // Calculate position and size to fit canvas
+    const scaleX = 1; // scale the X axis according to your camera resolution and canvas size
+    const scaleY = 1; // scale the Y axis accordingly
+    const rectX = x * scaleX;
+    const rectY = y * scaleY;
+    const rectWidth = width * scaleX;
+    const rectHeight = height * scaleY;
 
-    // console.log(rect);
-
-    const paint = Skia.Paint();
-    paint.setStrokeWidth(5);
-    paint.setColor(Skia.Color("red"));
-    paint.setAntiAlias(true); 
-    
-
-
-    return <Rect key={index} rect={rect} paint={paint} style="stroke" strokeWidth={3} />;
+    return (
+      <Group style="stroke" strokeWidth={10} key={index}>
+        <Rect
+          x={rectX}
+          y={rectY}
+          width={rectWidth}
+          height={rectHeight}
+          color="red"
+          antiAlias={true}
+        />
+      </Group>
+    );
   });
-
-  // console.log(renderSkia);
 
   if (!hasPermission) {
     return (
@@ -116,14 +123,15 @@ export default function App() {
         frameProcessor={frameProcessor}
       />
 
-      {detectedFaces && (
-        <Canvas style={StyleSheet.absoluteFillObject}>{renderSkia[0]}</Canvas>
+      {detectedFaces.length > 0 && (
+        <Canvas style={StyleSheet.absoluteFillObject}>
+          {/* Render the outlined rectangle around detected faces */}
+          {renderSkia}
+        </Canvas>
       )}
 
       <View style={styles.overlay}>
-        <Text style={styles.text}>
-          Detected Faces: {Array.from(detectedFaces).length}
-        </Text>
+        <Text style={styles.text}>Detected Faces: {detectedFaces.length}</Text>
       </View>
     </View>
   );
